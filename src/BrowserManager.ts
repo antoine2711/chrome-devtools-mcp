@@ -77,6 +77,211 @@ export class BrowserManager {
     }
   }
 
+  static getDefaultUserDataDirs(channel?: string): string[] {
+    const homedir = os.homedir();
+    const platform = os.platform();
+
+    if (channel === 'chromium') {
+      if (platform === 'linux') {
+        return [path.join(homedir, '.config', 'chromium')];
+      }
+      if (platform === 'darwin') {
+        return [
+          path.join(homedir, 'Library', 'Application Support', 'Chromium'),
+        ];
+      }
+      if (platform === 'win32') {
+        const localAppData =
+          process.env['LOCALAPPDATA'] || path.join(homedir, 'AppData', 'Local');
+        return [path.join(localAppData, 'Chromium', 'User Data')];
+      }
+    }
+
+    if (channel === 'stable' || !channel) {
+      if (platform === 'linux') {
+        return [
+          path.join(homedir, '.config', 'google-chrome'),
+          path.join(homedir, '.config', 'chromium'),
+          path.join(homedir, '.config', 'google-chrome-beta'),
+          path.join(homedir, '.config', 'google-chrome-unstable'),
+        ];
+      }
+      if (platform === 'darwin') {
+        return [
+          path.join(
+            homedir,
+            'Library',
+            'Application Support',
+            'Google',
+            'Chrome',
+          ),
+          path.join(homedir, 'Library', 'Application Support', 'Chromium'),
+        ];
+      }
+      if (platform === 'win32') {
+        const localAppData =
+          process.env['LOCALAPPDATA'] || path.join(homedir, 'AppData', 'Local');
+        return [
+          path.join(localAppData, 'Google', 'Chrome', 'User Data'),
+          path.join(localAppData, 'Chromium', 'User Data'),
+        ];
+      }
+    }
+
+    if (channel === 'beta') {
+      if (platform === 'linux') {
+        return [path.join(homedir, '.config', 'google-chrome-beta')];
+      }
+      if (platform === 'darwin') {
+        return [
+          path.join(
+            homedir,
+            'Library',
+            'Application Support',
+            'Google',
+            'Chrome Beta',
+          ),
+        ];
+      }
+      if (platform === 'win32') {
+        const localAppData =
+          process.env['LOCALAPPDATA'] || path.join(homedir, 'AppData', 'Local');
+        return [path.join(localAppData, 'Google', 'Chrome Beta', 'User Data')];
+      }
+    }
+
+    if (channel === 'canary') {
+      if (platform === 'linux') {
+        return [path.join(homedir, '.config', 'google-chrome-unstable')];
+      }
+      if (platform === 'darwin') {
+        return [
+          path.join(
+            homedir,
+            'Library',
+            'Application Support',
+            'Google',
+            'Chrome Canary',
+          ),
+        ];
+      }
+      if (platform === 'win32') {
+        const localAppData =
+          process.env['LOCALAPPDATA'] || path.join(homedir, 'AppData', 'Local');
+        return [path.join(localAppData, 'Google', 'Chrome SxS', 'User Data')];
+      }
+    }
+
+    if (channel === 'dev') {
+      if (platform === 'linux') {
+        return [path.join(homedir, '.config', 'google-chrome-unstable')];
+      }
+      if (platform === 'darwin') {
+        return [
+          path.join(
+            homedir,
+            'Library',
+            'Application Support',
+            'Google',
+            'Chrome Dev',
+          ),
+        ];
+      }
+      if (platform === 'win32') {
+        const localAppData =
+          process.env['LOCALAPPDATA'] || path.join(homedir, 'AppData', 'Local');
+        return [path.join(localAppData, 'Google', 'Chrome Dev', 'User Data')];
+      }
+    }
+
+    return [];
+  }
+
+  static async readDevToolsActivePort(
+    userDataDir: string,
+  ): Promise<string | undefined> {
+    const portPath = path.join(userDataDir, 'DevToolsActivePort');
+    try {
+      const fileContent = await fs.promises.readFile(portPath, 'utf8');
+      const [rawPort, rawPath] = fileContent
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => !!line);
+      if (!rawPort || !rawPath) {
+        return undefined;
+      }
+      const port = parseInt(rawPort, 10);
+      if (isNaN(port) || port <= 0 || port > 65535) {
+        return undefined;
+      }
+      return `ws://127.0.0.1:${port}${rawPath}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  static findChromiumExecutable(): string | undefined {
+    const platform = os.platform();
+    if (platform === 'linux') {
+      const candidates = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/snap/bin/chromium',
+        '/usr/local/bin/chromium',
+      ];
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+      try {
+        const whichResult = execSync(
+          'which chromium || which chromium-browser',
+          {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+          },
+        ).trim();
+        if (whichResult && fs.existsSync(whichResult)) {
+          return whichResult;
+        }
+      } catch {
+        // no-op
+      }
+    } else if (platform === 'darwin') {
+      const candidates = [
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        path.join(
+          os.homedir(),
+          'Applications/Chromium.app/Contents/MacOS/Chromium',
+        ),
+      ];
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    } else if (platform === 'win32') {
+      const prefixes = [
+        process.env['LOCALAPPDATA'],
+        process.env['PROGRAMFILES'],
+        process.env['PROGRAMFILES(X86)'],
+      ].filter(Boolean) as string[];
+      for (const prefix of prefixes) {
+        const candidate = path.join(
+          prefix,
+          'Chromium',
+          'Application',
+          'chrome.exe',
+        );
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return undefined;
+  }
+
   /**
    * Chrome refuses to start as root unless the sandbox is explicitly disabled and
    * only says so on its stderr. Because we launch with `pipe: true`, Puppeteer
@@ -255,9 +460,16 @@ export class BrowserManager {
     if (devtools) {
       args.push('--auto-open-devtools-for-tabs');
     }
-    if (!executablePath) {
-      puppeteerChannel =
-        channel && channel !== 'stable' ? `chrome-${channel}` : 'chrome';
+    let resolvedExecutablePath = executablePath;
+    if (!resolvedExecutablePath) {
+      if (channel === 'chromium') {
+        resolvedExecutablePath = BrowserManager.findChromiumExecutable();
+      } else {
+        puppeteerChannel =
+          channel && channel !== 'stable'
+            ? (`chrome-${channel}` as ChromeReleaseChannel)
+            : 'chrome';
+      }
     }
 
     if (!headless) {
@@ -269,7 +481,7 @@ export class BrowserManager {
       browser = await puppeteer.launch({
         channel: puppeteerChannel,
         targetFilter: BrowserManager.makeTargetFilter(enableExtensions),
-        executablePath,
+        executablePath: resolvedExecutablePath,
         defaultViewport: null,
         userDataDir,
         pipe: true,
@@ -358,45 +570,52 @@ export class BrowserManager {
     } else if (browserURL) {
       connectOptions.browserURL = browserURL;
     } else if (channel || userDataDir) {
+      autoConnect = true;
       if (userDataDir) {
-        autoConnect = true;
-        // TODO: re-expose this logic via Puppeteer.
-        const portPath = path.join(userDataDir, 'DevToolsActivePort');
-        try {
-          const fileContent = await fs.promises.readFile(portPath, 'utf8');
-          const [rawPort, rawPath] = fileContent
-            .split('\n')
-            .map(line => {
-              return line.trim();
-            })
-            .filter(line => {
-              return !!line;
-            });
-          if (!rawPort || !rawPath) {
-            throw new Error(
-              `Invalid DevToolsActivePort '${fileContent}' found`,
-            );
-          }
-          const port = parseInt(rawPort, 10);
-          if (isNaN(port) || port <= 0 || port > 65535) {
-            throw new Error(`Invalid port '${rawPort}' found`);
-          }
-          const browserWSEndpoint = `ws://127.0.0.1:${port}${rawPath}`;
-          connectOptions.browserWSEndpoint = browserWSEndpoint;
-        } catch (error) {
+        const wsEndpointFromPort =
+          await BrowserManager.readDevToolsActivePort(userDataDir);
+        if (wsEndpointFromPort) {
+          connectOptions.browserWSEndpoint = wsEndpointFromPort;
+        } else {
           throw new Error(
             `Could not connect to Chrome in ${userDataDir}. Check if Chrome is running and remote debugging is enabled by going to chrome://inspect/#remote-debugging.`,
-            {
-              cause: error,
-            },
           );
         }
       } else {
         if (!channel) {
           throw new Error('Channel must be provided if userDataDir is missing');
         }
-        connectOptions.channel =
-          channel === 'stable' ? 'chrome' : `chrome-${channel}`;
+
+        // Try candidate user data directories in order (e.g. Chrome, Chromium)
+        const candidates = BrowserManager.getDefaultUserDataDirs(channel);
+        let foundEndpoint: string | undefined;
+        let foundDir: string | undefined;
+
+        for (const dir of candidates) {
+          const ep = await BrowserManager.readDevToolsActivePort(dir);
+          if (ep) {
+            foundEndpoint = ep;
+            foundDir = dir;
+            break;
+          }
+        }
+
+        if (foundEndpoint) {
+          logger?.(`Found DevToolsActivePort in ${foundDir}: ${foundEndpoint}`);
+          connectOptions.browserWSEndpoint = foundEndpoint;
+        } else if (channel === 'chromium') {
+          throw new Error(
+            `Could not find DevToolsActivePort for Chromium. Check if Chromium is running with remote debugging enabled.`,
+          );
+        } else {
+          // If no running browser DevToolsActivePort was detected in candidate dirs,
+          // fall back to Puppeteer's default channel resolution so original error
+          // handling and messages for Google Chrome channels remain preserved.
+          connectOptions.channel =
+            channel === 'stable'
+              ? 'chrome'
+              : (`chrome-${channel}` as ChromeReleaseChannel);
+        }
       }
     } else {
       throw new Error(

@@ -343,6 +343,11 @@ describe('cli args parsing', () => {
     });
   });
 
+  it('parses channel chromium', async () => {
+    const args = parseConfig(['--channel=chromium'], {});
+    assert.strictEqual(args.channel, 'chromium');
+  });
+
   it('rejects invalid screencast fps values', async () => {
     const coerce = mcpOptions.experimentalScreencastFps.coerce;
     assert.ok(coerce);

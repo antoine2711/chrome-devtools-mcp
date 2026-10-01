@@ -278,6 +278,7 @@ export const CLI_EXAMPLES: Array<[string, string]> = [
   ['$0 --channel canary', 'Use Chrome Canary installed on this system'],
   ['$0 --channel dev', 'Use Chrome Dev installed on this system'],
   ['$0 --channel stable', 'Use stable Chrome installed on this system'],
+  ['$0 --channel chromium', 'Use Chromium installed on this system'],
   ['$0 --logFile /tmp/log.txt', 'Save logs to a file'],
   ['$0 --help', 'Print CLI options'],
   [

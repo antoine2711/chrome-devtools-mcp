@@ -100,8 +100,8 @@ export const browserOptions = {
   channel: {
     type: 'string',
     description:
-      'Specify a different Chrome channel that should be used. The default is the stable channel version.',
-    choices: ['canary', 'dev', 'beta', 'stable'] as const,
+      'Specify a different Chrome/Chromium channel that should be used. The default is the stable channel version.',
+    choices: ['canary', 'dev', 'beta', 'stable', 'chromium'] as const,
     default: 'stable' as const,
   },
   proxyServer: {

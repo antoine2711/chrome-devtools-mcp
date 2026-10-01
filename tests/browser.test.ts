@@ -5,6 +5,7 @@
  */
 
 import assert from 'node:assert';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, it} from 'node:test';
@@ -20,6 +21,7 @@ import {
   createMockPuppeteerBrowser,
 } from './mocks.js';
 import {serverHooks} from './server.js';
+import {createTempDir} from './utils.js';
 
 async function safeClose(browser: Browser) {
   try {
@@ -903,6 +905,107 @@ describe('browser', () => {
         filterWithoutExtensions(mockTarget('about:blank')),
         true,
       );
+    });
+
+    describe('Chromium and multi-profile autoConnect support', () => {
+      it('returns chromium profile path for channel chromium', () => {
+        const dirs = BrowserManager.getDefaultUserDataDirs('chromium');
+        assert.ok(dirs.length >= 1);
+        if (os.platform() === 'linux') {
+          assert.ok(dirs.some(d => d.includes('.config/chromium')));
+        } else if (os.platform() === 'darwin') {
+          assert.ok(dirs.some(d => d.includes('Chromium')));
+        } else if (os.platform() === 'win32') {
+          assert.ok(dirs.some(d => d.includes('Chromium')));
+        }
+      });
+
+      it('includes chromium profile path in stable candidate paths', () => {
+        const dirs = BrowserManager.getDefaultUserDataDirs('stable');
+        assert.ok(dirs.length >= 2);
+        assert.ok(
+          dirs.some(d => d.includes('chromium') || d.includes('Chromium')),
+        );
+      });
+
+      it('reads valid DevToolsActivePort correctly', async () => {
+        using tempDir = createTempDir('cdm-test-port-');
+        const portFile = path.join(tempDir.path, 'DevToolsActivePort');
+        await fs.promises.writeFile(
+          portFile,
+          '9876\n/devtools/browser/abc-123\n',
+        );
+        const endpoint = await BrowserManager.readDevToolsActivePort(
+          tempDir.path,
+        );
+        assert.strictEqual(
+          endpoint,
+          'ws://127.0.0.1:9876/devtools/browser/abc-123',
+        );
+      });
+
+      it('returns undefined for non-existent or invalid DevToolsActivePort', async () => {
+        const nonExistent = await BrowserManager.readDevToolsActivePort(
+          '/path/that/does/not/exist',
+        );
+        assert.strictEqual(nonExistent, undefined);
+
+        using tempDir = createTempDir('cdm-test-port-invalid-');
+        const portFile = path.join(tempDir.path, 'DevToolsActivePort');
+        await fs.promises.writeFile(portFile, 'not-a-port\n');
+        const endpoint = await BrowserManager.readDevToolsActivePort(
+          tempDir.path,
+        );
+        assert.strictEqual(endpoint, undefined);
+      });
+
+      it('autoConnect connects to Chromium DevToolsActivePort if found in candidate dirs', async () => {
+        using tempDir = createTempDir('cdm-test-auto-');
+        const portFile = path.join(tempDir.path, 'DevToolsActivePort');
+        await fs.promises.writeFile(
+          portFile,
+          '45678\n/devtools/browser/mock-id\n',
+        );
+
+        sinon
+          .stub(BrowserManager, 'getDefaultUserDataDirs')
+          .returns([tempDir.path]);
+
+        const pptrBrowser = createMockPuppeteerBrowser();
+        const connectStub = sinon
+          .stub(puppeteer, 'connect')
+          .resolves(pptrBrowser);
+
+        const args = createMockParsedArguments({
+          autoConnect: true,
+          channel: 'stable',
+        });
+        const manager = new BrowserManager(args);
+
+        const browser = await manager.ensureBrowser();
+        assert.strictEqual(browser, pptrBrowser);
+        sinon.assert.calledOnce(connectStub);
+        sinon.assert.calledWithMatch(connectStub, {
+          browserWSEndpoint: 'ws://127.0.0.1:45678/devtools/browser/mock-id',
+        });
+      });
+
+      it('autoConnect with channel chromium throws error if no DevToolsActivePort found', async () => {
+        sinon
+          .stub(BrowserManager, 'getDefaultUserDataDirs')
+          .returns(['/non/existent/dir']);
+
+        const args = createMockParsedArguments({
+          autoConnect: true,
+          channel: 'chromium',
+        });
+        const manager = new BrowserManager(args);
+
+        await assert.rejects(
+          async () => manager.ensureBrowser(),
+          /Could not find DevToolsActivePort for Chromium/,
+        );
+      });
     });
   });
 });
